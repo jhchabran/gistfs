@@ -1,13 +1,15 @@
 package gistfs
 
 import (
+	"context"
 	"fmt"
 	"testing"
 )
 
 func TestOK(t *testing.T) {
-	gfs := New("e4d1a1b18aeabd7d15427f4afb34cd8e")
-	f, err := gfs.Open("usernames.json")
+	gfs := New("ded2f6727d98e6b0095e62a7813aa7cf")
+	gfs.Load(context.Background())
+	f, err := gfs.Open("test1.txt")
 
 	if err != nil {
 		t.Fatal(err)
