@@ -3,7 +3,7 @@ package gistfs
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"errors"
 	"io/fs"
 	"time"
 
@@ -12,6 +12,8 @@ import (
 
 // Ensure FS implements fs.FS interface.
 var _ fs.FS = (*FS)(nil)
+
+var ErrNotLoaded = errors.New("gist not loaded")
 
 type FS struct {
 	ID     string
@@ -33,13 +35,15 @@ func NewWithClient(client *github.Client, id string) *FS {
 	}
 }
 
-func (g *FS) Load(ctx context.Context) error {
-	gist, _, err := g.client.Gists.Get(ctx, g.ID)
+// Load fetches the gist content from github, making the file system ready
+// for use. If the underlying Github API call fails, it will return an error.
+func (f *FS) Load(ctx context.Context) error {
+	gist, _, err := f.client.Gists.Get(ctx, f.ID)
 	if err != nil {
 		return err
 	}
 
-	g.gist = gist
+	f.gist = gist
 	return nil
 }
 
@@ -54,16 +58,17 @@ type file struct {
 
 func (g *FS) Open(name string) (fs.File, error) {
 	if g.gist == nil {
-		return nil, fmt.Errorf("not loaded") // TODO there may be some stuff for that
+		return nil, ErrNotLoaded
 	}
+
 	gistFile, ok := g.gist.Files[github.GistFilename(name)]
 	if !ok {
-		return nil, fmt.Errorf("not found") // TODO there may be some stuff for that
+		return nil, fs.ErrNotExist
 	}
 
 	// this should not happen, but as it comes from the API, we never know.
 	if gistFile.Filename == nil || gistFile.Content == nil || g.gist.CreatedAt == nil {
-		return nil, fmt.Errorf("not found") // TODO there may be some stuff for that
+		return nil, fs.ErrNotExist
 	}
 
 	file := file{
@@ -76,13 +81,42 @@ func (g *FS) Open(name string) (fs.File, error) {
 	return &file, nil
 }
 
+func (f *file) isClosed() bool {
+	return f.buf == nil
+}
+
 func (f *file) Read(b []byte) (int, error) {
+	if f == nil {
+		return 0, fs.ErrInvalid
+	}
+
+	if f.isClosed() {
+		return 0, fs.ErrClosed
+	}
+
 	return f.buf.Read(b)
 }
 
-func (f *file) Close() error { return nil }
+func (f *file) Close() error {
+	if f == nil {
+		return fs.ErrInvalid
+	}
+
+	f.content = ""
+	f.buf = nil
+
+	return nil
+}
 
 func (f *file) Stat() (fs.FileInfo, error) {
+	if f == nil {
+		return nil, fs.ErrInvalid
+	}
+
+	if f.isClosed() {
+		return nil, fs.ErrClosed
+	}
+
 	info := fileInfo{
 		name:    f.name,
 		size:    int64(len(f.content)),
