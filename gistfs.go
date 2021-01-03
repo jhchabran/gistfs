@@ -67,7 +67,7 @@ func (g *FS) Open(name string) (fs.File, error) {
 	}
 
 	// this should not happen, but as it comes from the API, we never know.
-	if gistFile.Filename == nil || gistFile.Content == nil || g.gist.CreatedAt == nil {
+	if gistFile.Filename == nil || gistFile.Content == nil || g.gist.UpdatedAt == nil {
 		return nil, fs.ErrNotExist
 	}
 
