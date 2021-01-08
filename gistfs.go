@@ -13,7 +13,7 @@ import (
 // Ensure FS implements fs.FS interface.
 var _ fs.FS = (*FS)(nil)
 
-var ErrNotLoaded = errors.New("gist not loaded")
+var ErrNotLoaded = fmt.Errorf("gist not loaded: %w", fs.ErrInvalid)
 
 type FS struct {
 	ID     string

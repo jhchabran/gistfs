@@ -2,6 +2,7 @@ package gistfs
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"net/http"
 	"testing"
@@ -20,6 +21,12 @@ func cachingClient() *github.Client {
 	}
 
 	return github.NewClient(c)
+}
+
+func TestErrorNotLoaded(t *testing.T) {
+	if !errors.Is(ErrNotLoaded, fs.ErrInvalid) {
+		t.Fatal("Err not loaded is not a wrapped ErrInvalid")
+	}
 }
 
 func TestNew(t *testing.T) {
