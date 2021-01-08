@@ -11,8 +11,9 @@ import (
 	"github.com/google/go-github/v33/github"
 )
 
-// Ensure FS implements fs.FS interface.
+// Ensure FS implements fs.FS and fs.ReadFileFS interface.
 var _ fs.FS = (*FS)(nil)
+var _ fs.ReadFileFS = (*FS)(nil)
 
 var ErrNotLoaded = fmt.Errorf("gist not loaded: %w", fs.ErrInvalid)
 
@@ -57,18 +58,21 @@ type file struct {
 	size    int64
 }
 
-func (g *FS) Open(name string) (fs.File, error) {
-	if g.gist == nil {
+func (f *FS) Open(name string) (fs.File, error) {
+	if f.gist == nil {
 		return nil, ErrNotLoaded
 	}
 
-	gistFile, ok := g.gist.Files[github.GistFilename(name)]
+	gistFile, ok := f.gist.Files[github.GistFilename(name)]
 	if !ok {
 		return nil, fs.ErrNotExist
 	}
 
-	// this should not happen, but as it comes from the API, we never know.
-	if gistFile.Filename == nil || gistFile.Content == nil || g.gist.UpdatedAt == nil {
+	// This should not happen, but as it comes from the API, we never know.
+	// Also, it's more accurate to test against the pointers from the response
+	// than the accessors such as gistFile.GetContent() as an empty string
+	// could be a valid value.
+	if gistFile.Filename == nil || gistFile.Content == nil || f.gist.UpdatedAt == nil {
 		return nil, fs.ErrNotExist
 	}
 
@@ -76,10 +80,23 @@ func (g *FS) Open(name string) (fs.File, error) {
 		name:    *gistFile.Filename,
 		reader:  bytes.NewReader([]byte(*gistFile.Content)),
 		size:    int64(len(*gistFile.Content)),
-		modTime: *g.gist.UpdatedAt,
+		modTime: *f.gist.UpdatedAt,
 	}
 
 	return &file, nil
+}
+
+func (f *FS) ReadFile(name string) ([]byte, error) {
+	if f.gist == nil {
+		return nil, ErrNotLoaded
+	}
+
+	gistFile, ok := f.gist.Files[github.GistFilename(name)]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+
+	return []byte(gistFile.GetContent()), nil
 }
 
 func (f *file) isClosed() bool {

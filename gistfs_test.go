@@ -86,6 +86,40 @@ func TestOpen(t *testing.T) {
 	})
 }
 
+func TestReadFile(t *testing.T) {
+	t.Run("ReadFile OK", func(t *testing.T) {
+		gfs := NewWithClient(cacheClient, referenceGistID)
+		gfs.Load(context.Background())
+
+		tests := []struct {
+			name    string
+			content string
+			err     error
+		}{
+			{"test1.txt", "foobar\nbarfoo", nil},
+			{"test2.txt", "olala\n12345\nabcde", nil},
+			{"non-existing-file.txt", "", fs.ErrNotExist},
+		}
+
+		for _, test := range tests {
+			b, err := gfs.ReadFile(test.name)
+
+			if err != test.err {
+				t.Fatalf("Read file %#v, got error %#v, want %#v", test.name, err, test.err)
+			}
+
+			if test.err == nil && b == nil {
+				t.Fatalf("Read file %#v, got nil", test.name)
+			}
+
+			if test.content != string(b) {
+				t.Fatalf("Read file %#v, expected %#v but got %#v", test.name, test.content, string(b))
+			}
+		}
+	})
+
+}
+
 func TestRead(t *testing.T) {
 	gfs := NewWithClient(cacheClient, referenceGistID)
 	gfs.Load(context.Background())
