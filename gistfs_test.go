@@ -23,6 +23,8 @@ func cachingClient() *github.Client {
 	return github.NewClient(c)
 }
 
+var cacheClient = cachingClient()
+
 func TestErrorNotLoaded(t *testing.T) {
 	if !errors.Is(ErrNotLoaded, fs.ErrInvalid) {
 		t.Fatal("Err not loaded is not a wrapped ErrInvalid")
@@ -38,7 +40,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("NewWithClient OK", func(t *testing.T) {
-		gfs := NewWithClient(cachingClient(), referenceGistID)
+		gfs := NewWithClient(cacheClient, referenceGistID)
 		if got, want := gfs.ID, referenceGistID; got != want {
 			t.Fatalf("NewWithClient returned a FS with ID=%#v, want %#v", got, want)
 		}
@@ -47,7 +49,7 @@ func TestNew(t *testing.T) {
 
 func TestOpen(t *testing.T) {
 	t.Run("Open OK", func(t *testing.T) {
-		gfs := NewWithClient(cachingClient(), referenceGistID)
+		gfs := NewWithClient(cacheClient, referenceGistID)
 		gfs.Load(context.Background())
 
 		tests := []struct {
@@ -73,7 +75,7 @@ func TestOpen(t *testing.T) {
 	})
 
 	t.Run("Open NOK not loaded", func(t *testing.T) {
-		gfs := NewWithClient(cachingClient(), referenceGistID)
+		gfs := NewWithClient(cacheClient, referenceGistID)
 		_, err := gfs.Open("test1.txt")
 
 		if err == nil {
@@ -85,7 +87,7 @@ func TestOpen(t *testing.T) {
 }
 
 func TestRead(t *testing.T) {
-	gfs := NewWithClient(cachingClient(), referenceGistID)
+	gfs := NewWithClient(cacheClient, referenceGistID)
 	gfs.Load(context.Background())
 
 	t.Run("Read OK", func(t *testing.T) {
@@ -137,7 +139,7 @@ func TestRead(t *testing.T) {
 }
 
 func TestStat(t *testing.T) {
-	gfs := NewWithClient(cachingClient(), referenceGistID)
+	gfs := NewWithClient(cacheClient, referenceGistID)
 	gfs.Load(context.Background())
 
 	t.Run("Stat OK", func(t *testing.T) {
