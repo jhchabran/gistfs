@@ -3,7 +3,8 @@ package gistfs
 import (
 	"bytes"
 	"context"
-	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"time"
 
@@ -51,9 +52,9 @@ func (f *FS) Load(ctx context.Context) error {
 // It is built out of a github.GistFile.
 type file struct {
 	name    string
-	content string
-	buf     *bytes.Buffer
+	reader  io.Reader
 	modTime time.Time
+	size    int64
 }
 
 func (g *FS) Open(name string) (fs.File, error) {
@@ -73,8 +74,8 @@ func (g *FS) Open(name string) (fs.File, error) {
 
 	file := file{
 		name:    *gistFile.Filename,
-		content: *gistFile.Content,
-		buf:     bytes.NewBufferString(*gistFile.Content),
+		reader:  bytes.NewReader([]byte(*gistFile.Content)),
+		size:    int64(len(*gistFile.Content)),
 		modTime: *g.gist.UpdatedAt,
 	}
 
@@ -82,7 +83,7 @@ func (g *FS) Open(name string) (fs.File, error) {
 }
 
 func (f *file) isClosed() bool {
-	return f.buf == nil
+	return f.reader == nil
 }
 
 func (f *file) Read(b []byte) (int, error) {
@@ -94,7 +95,7 @@ func (f *file) Read(b []byte) (int, error) {
 		return 0, fs.ErrClosed
 	}
 
-	return f.buf.Read(b)
+	return f.reader.Read(b)
 }
 
 func (f *file) Close() error {
@@ -102,8 +103,7 @@ func (f *file) Close() error {
 		return fs.ErrInvalid
 	}
 
-	f.content = ""
-	f.buf = nil
+	f.reader = nil
 
 	return nil
 }
@@ -119,7 +119,7 @@ func (f *file) Stat() (fs.FileInfo, error) {
 
 	info := fileInfo{
 		name:    f.name,
-		size:    int64(len(f.content)),
+		size:    f.size,
 		mode:    fs.FileMode(0444),
 		modTime: f.modTime,
 		sys:     f,
