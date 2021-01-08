@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"sync"
 	"time"
 
 	"github.com/google/go-github/v33/github"
@@ -21,6 +22,7 @@ type FS struct {
 	ID     string
 	client *github.Client
 	gist   *github.Gist
+	mu     sync.RWMutex
 }
 
 func New(id string) *FS {
@@ -40,6 +42,9 @@ func NewWithClient(client *github.Client, id string) *FS {
 // Load fetches the gist content from github, making the file system ready
 // for use. If the underlying Github API call fails, it will return an error.
 func (f *FS) Load(ctx context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	gist, _, err := f.client.Gists.Get(ctx, f.ID)
 	if err != nil {
 		return err
@@ -56,9 +61,13 @@ type file struct {
 	reader  io.Reader
 	modTime time.Time
 	size    int64
+	mu      sync.Mutex
 }
 
 func (f *FS) Open(name string) (fs.File, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
 	if f.gist == nil {
 		return nil, ErrNotLoaded
 	}
@@ -87,6 +96,9 @@ func (f *FS) Open(name string) (fs.File, error) {
 }
 
 func (f *FS) ReadFile(name string) ([]byte, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
 	if f.gist == nil {
 		return nil, ErrNotLoaded
 	}
@@ -108,6 +120,9 @@ func (f *file) Read(b []byte) (int, error) {
 		return 0, fs.ErrInvalid
 	}
 
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if f.isClosed() {
 		return 0, fs.ErrClosed
 	}
@@ -120,6 +135,9 @@ func (f *file) Close() error {
 		return fs.ErrInvalid
 	}
 
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.reader = nil
 
 	return nil
@@ -129,6 +147,9 @@ func (f *file) Stat() (fs.FileInfo, error) {
 	if f == nil {
 		return nil, fs.ErrInvalid
 	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if f.isClosed() {
 		return nil, fs.ErrClosed
