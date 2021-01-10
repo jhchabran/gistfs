@@ -66,7 +66,7 @@ func main() {
 
 	fmt.Println(string(b))
 
-	// --- Serve the files from the gists http
+	// --- Serve the files from the gists over http
 	http.ListenAndServe(":8080", http.FileServer(http.FS(gfs)))
 }
 ```
