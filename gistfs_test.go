@@ -13,6 +13,7 @@ import (
 )
 
 var referenceGistID = "ded2f6727d98e6b0095e62a7813aa7cf"
+var approxModTime, _ = time.Parse("2000-12-31", "2020-01-02") // when the gist was last edited
 
 // Avoid burning rate limit by using a caching http client.
 func cachingClient() *github.Client {
@@ -177,7 +178,6 @@ func TestStat(t *testing.T) {
 	gfs.Load(context.Background())
 
 	t.Run("Stat OK", func(t *testing.T) {
-		approxModTime, _ := time.Parse("2000-12-31", "2020-01-02") // when the gist was last edited
 
 		tests := []struct {
 			filename      string
@@ -239,8 +239,9 @@ func TestStat(t *testing.T) {
 					t.Fatalf("got isDir %#v, want %#v", got, want)
 				}
 
-				if got, want := stat.Sys(), f; got != want {
-					t.Fatalf("got Sys %#v, want %#v", got, want)
+				_, ok := stat.Sys().(*github.GistFile)
+				if got, want := ok, true; got != want {
+					t.Fatal("got Sys with type different from *github.GistFile, want it to be the case")
 				}
 			}
 		}
@@ -266,6 +267,115 @@ func TestStat(t *testing.T) {
 
 		if got, want := err, fs.ErrClosed; got != want {
 			t.Fatalf("Read on a closed file and got %#v, want %#v", got, want)
+		}
+	})
+}
+
+func TestReadDir(t *testing.T) {
+	gfs := NewWithClient(cacheClient, referenceGistID)
+	gfs.Load(context.Background())
+
+	t.Run("OK", func(t *testing.T) {
+		file, err := gfs.Open(".")
+		if err != nil {
+			t.Fatalf("Opening root directory, expected no error but got %#v", err)
+		}
+
+		dir, ok := file.(fs.ReadDirFile)
+		if !ok {
+			t.Fatal("Reading root directory, expected a ReadDirFile but got something else")
+		}
+
+		files, err := dir.ReadDir(-1)
+		if err != nil {
+			t.Fatalf("Reading root directory, expected no error but got %#v", err)
+		}
+
+		if got, want := len(files), 2; got != want {
+			t.Fatalf("Reading root directory, got %#v files, want %#v", got, want)
+		}
+	})
+
+	t.Run("OK subsequent reads", func(t *testing.T) {
+		file, err := gfs.Open(".")
+		if err != nil {
+			t.Fatalf("Opening root directory, expected no error but got %#v", err)
+		}
+
+		dir, ok := file.(fs.ReadDirFile)
+		if !ok {
+			t.Fatal("Reading root directory, expected a ReadDirFile but got something else")
+		}
+
+		// first read
+		files, err := dir.ReadDir(1)
+		if err != nil {
+			t.Fatalf("Reading root directory, expected no error but got %#v", err)
+		}
+
+		if got, want := len(files), 1; got != want {
+			t.Fatalf("Reading root directory, got %#v files, want %#v", got, want)
+		}
+
+		// second read
+		files, err = dir.ReadDir(1)
+		if err != nil {
+			t.Fatalf("Reading root directory, expected no error but got %#v", err)
+		}
+
+		if got, want := len(files), 1; got != want {
+			t.Fatalf("Reading root directory, got %#v files, want %#v", got, want)
+		}
+
+		// last read (no entries left)
+		files, err = dir.ReadDir(1)
+		if err != nil {
+			t.Fatalf("Reading root directory, expected no error but got %#v", err)
+		}
+
+		if got, want := len(files), 0; got != want {
+			t.Fatalf("Reading root directory, got %#v files, want %#v", got, want)
+		}
+	})
+
+	t.Run("OK ReadDir", func(t *testing.T) {
+		files, err := gfs.ReadDir(".")
+		if err != nil {
+			t.Fatalf("Reading root directory, expected no error but got %#v", err)
+		}
+
+		if got, want := len(files), 2; got != want {
+			t.Fatalf("Reading root directory, got %#v files, want %#v", got, want)
+		}
+	})
+
+	t.Run("OK Stat", func(t *testing.T) {
+		file, err := gfs.Open(".")
+		if err != nil {
+			t.Fatalf("Opening root directory, expected no error but got %#v", err)
+		}
+
+		dir, ok := file.(fs.ReadDirFile)
+		if !ok {
+			t.Fatal("Reading root directory, expected a ReadDirFile but got something else")
+		}
+
+		stat, err := dir.Stat()
+		if err != nil {
+			t.Fatalf("Getting stat of root directory, expected no error but got %#v", err)
+		}
+
+		if got, want := stat.Name(), "./"; got != want {
+			t.Fatalf("Reading name of root directory, got %#v files, want %#v", got, want)
+		}
+
+		if got, want := stat.ModTime(), approxModTime; got.After(approxModTime) &&
+			got.Before(approxModTime.Add(24*time.Hour)) {
+			t.Fatalf("got modTime %#v, want approx %#v", got, want)
+		}
+
+		if got, want := stat.IsDir(), true; got != want {
+			t.Fatalf("got isDir %#v, want %#v", got, want)
 		}
 	})
 }

@@ -3,6 +3,7 @@ package gistfs
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -14,9 +15,12 @@ import (
 
 // Ensure FS implements fs.FS and fs.ReadFileFS interface.
 var (
+	_ fs.ReadDirFS  = (*FS)(nil)
 	_ fs.ReadFileFS = (*FS)(nil)
 
-	_ fs.FileInfo = (*file)(nil)
+	_ fs.FileInfo    = (*file)(nil)
+	_ fs.DirEntry    = (*file)(nil)
+	_ fs.ReadDirFile = (*file)(nil)
 )
 
 // Ensure that *file is always a ReadDirFile.
@@ -83,32 +87,51 @@ func (fsys *FS) Open(name string) (fs.File, error) {
 		return nil, ErrNotLoaded
 	}
 
+	if name == "/" || name == "." {
+		return fsys.openRoot(), nil
+	}
+
 	f, ok := fsys.gist.Files[github.GistFilename(name)]
 	if !ok {
 		return nil, fs.ErrNotExist
 	}
 
-	return &file{
-		gistFile: &f,
-		reader:   bytes.NewReader([]byte(f.GetContent())),
-		modtime:  fsys.gist.GetUpdatedAt(),
-	}, nil
+	return fsys.wrapFile(&f), nil
 }
 
-func (f *FS) ReadFile(name string) ([]byte, error) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
+func (fsys *FS) wrapFile(f *github.GistFile) *file {
+	return &file{
+		gistFile: f,
+		reader:   bytes.NewReader([]byte(f.GetContent())),
+		modtime:  fsys.gist.GetUpdatedAt(),
+	}
+}
 
-	if f.gist == nil {
+func (fsys *FS) ReadFile(name string) ([]byte, error) {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
+
+	if fsys.gist == nil {
 		return nil, ErrNotLoaded
 	}
 
-	gistFile, ok := f.gist.Files[github.GistFilename(name)]
+	gistFile, ok := fsys.gist.Files[github.GistFilename(name)]
 	if !ok {
 		return nil, fs.ErrNotExist
 	}
 
 	return []byte(gistFile.GetContent()), nil
+}
+
+func (fsys *FS) ReadDir(name string) ([]fs.DirEntry, error) {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
+
+	if fsys.gist == nil {
+		return nil, ErrNotLoaded
+	}
+
+	return fsys.openRoot().(*rootDir).ReadDir(-1)
 }
 
 func (f *file) isClosed() bool {
@@ -159,13 +182,82 @@ func (f *file) Stat() (fs.FileInfo, error) {
 	return f, nil
 }
 
-func (f *file) ReadDir(n int) ([]fs.DirEntry, error) {
-	return nil, fs.ErrInvalid
+func (f *file) Name() string               { return f.gistFile.GetFilename() }
+func (f *file) Size() int64                { return int64(f.gistFile.GetSize()) }
+func (f *file) Mode() fs.FileMode          { return 0444 }
+func (f *file) ModTime() time.Time         { return f.modtime }
+func (f *file) IsDir() bool                { return false }
+func (f *file) Sys() interface{}           { return f.gistFile }
+func (f *file) Type() fs.FileMode          { return f.Mode().Type() }
+func (f *file) Info() (fs.FileInfo, error) { return f, nil }
+
+func (f *file) ReadDir(count int) ([]fs.DirEntry, error) {
+	return nil, &fs.PathError{
+		Op:   "read",
+		Path: f.Name(),
+		Err:  errors.New("is not a directory"),
+	}
 }
 
-func (f *file) Name() string       { return f.gistFile.GetFilename() }
-func (f *file) Size() int64        { return int64(f.gistFile.GetSize()) }
-func (f *file) Mode() fs.FileMode  { return 0444 }
-func (f *file) ModTime() time.Time { return f.modtime }
-func (f *file) IsDir() bool        { return false }
-func (f *file) Sys() interface{}   { return f }
+type rootDir struct {
+	files   []*file
+	offset  int
+	modtime time.Time
+	mu      sync.Mutex
+}
+
+func (fsys *FS) openRoot() fs.File {
+	files := make([]*file, 0, len(fsys.gist.Files))
+	for _, f := range fsys.gist.Files {
+		files = append(files, fsys.wrapFile(&f))
+	}
+
+	return &rootDir{
+		files:   files,
+		modtime: fsys.gist.GetUpdatedAt(),
+	}
+}
+
+func (d *rootDir) Close() error               { return nil }
+func (d *rootDir) Stat() (fs.FileInfo, error) { return d, nil }
+func (d *rootDir) Name() string               { return "./" }
+func (d *rootDir) Size() int64                { return 0 }
+func (d *rootDir) Mode() fs.FileMode          { return fs.ModeDir | 0444 }
+func (d *rootDir) ModTime() time.Time         { return d.modtime }
+func (d *rootDir) IsDir() bool                { return true }
+func (d *rootDir) Type() fs.FileMode          { return d.Mode().Type() }
+func (d *rootDir) Sys() interface{}           { return nil }
+
+func (d *rootDir) Read(b []byte) (int, error) {
+	return 0, &fs.PathError{
+		Op:   "read",
+		Path: d.Name(),
+		Err:  errors.New("is a directory"),
+	}
+}
+
+func (d *rootDir) ReadDir(count int) ([]fs.DirEntry, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	n := len(d.files) - d.offset
+
+	if count > 0 && n > count {
+		n = count
+	}
+
+	if n == 0 {
+		if count <= 0 {
+			return nil, nil
+		}
+	}
+
+	files := make([]fs.DirEntry, n)
+	for i := range files {
+		files[i] = d.files[d.offset+i]
+	}
+
+	d.offset += n
+
+	return files, nil
+}
