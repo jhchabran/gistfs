@@ -13,13 +13,19 @@ import (
 )
 
 // Ensure FS implements fs.FS and fs.ReadFileFS interface.
-var _ fs.FS = (*FS)(nil)
-var _ fs.ReadFileFS = (*FS)(nil)
+var (
+	_ fs.ReadFileFS = (*FS)(nil)
+
+	_ fs.FileInfo = (*file)(nil)
+)
+
+// Ensure that *file is always a ReadDirFile.
+// Non directories returns an error if ReadDir(int) is called on them.
 
 var ErrNotLoaded = fmt.Errorf("gist not loaded: %w", fs.ErrInvalid)
 
 type FS struct {
-	ID     string
+	id     string
 	client *github.Client
 	gist   *github.Gist
 	mu     sync.RWMutex
@@ -28,71 +34,65 @@ type FS struct {
 func New(id string) *FS {
 	return &FS{
 		client: github.NewClient(nil),
-		ID:     id,
+		id:     id,
 	}
 }
 
 func NewWithClient(client *github.Client, id string) *FS {
 	return &FS{
 		client: client,
-		ID:     id,
+		id:     id,
 	}
+}
+
+// GetID returns the Github Gist ID that the filesystem was created with
+func (fsys *FS) GetID() string {
+	return fsys.id
 }
 
 // Load fetches the gist content from github, making the file system ready
 // for use. If the underlying Github API call fails, it will return an error.
-func (f *FS) Load(ctx context.Context) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+func (fsys *FS) Load(ctx context.Context) error {
+	fsys.mu.Lock()
+	defer fsys.mu.Unlock()
 
-	gist, _, err := f.client.Gists.Get(ctx, f.ID)
+	gist, _, err := fsys.client.Gists.Get(ctx, fsys.id)
 	if err != nil {
 		return err
 	}
 
-	f.gist = gist
+	fsys.gist = gist
+
 	return nil
 }
 
 // file represents a file stored in a Gist and implements fs.File methods.
 // It is built out of a github.GistFile.
 type file struct {
-	name    string
-	reader  io.Reader
-	modTime time.Time
-	size    int64
-	mu      sync.Mutex
+	gistFile *github.GistFile
+	modtime  time.Time
+	reader   io.Reader
+	mu       sync.Mutex
 }
 
-func (f *FS) Open(name string) (fs.File, error) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
+func (fsys *FS) Open(name string) (fs.File, error) {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
 
-	if f.gist == nil {
+	if fsys.gist == nil {
 		return nil, ErrNotLoaded
 	}
 
-	gistFile, ok := f.gist.Files[github.GistFilename(name)]
+	f, ok := fsys.gist.Files[github.GistFilename(name)]
 	if !ok {
 		return nil, fs.ErrNotExist
 	}
 
-	// This should not happen, but as it comes from the API, we never know.
-	// Also, it's more accurate to test against the pointers from the response
-	// than the accessors such as gistFile.GetContent() as an empty string
-	// could be a valid value.
-	if gistFile.Filename == nil || gistFile.Content == nil || f.gist.UpdatedAt == nil {
-		return nil, fs.ErrNotExist
-	}
-
-	file := file{
-		name:    *gistFile.Filename,
-		reader:  bytes.NewReader([]byte(*gistFile.Content)),
-		size:    int64(len(*gistFile.Content)),
-		modTime: *f.gist.UpdatedAt,
-	}
-
-	return &file, nil
+	return &file{
+		gistFile: &f,
+		reader:   bytes.NewReader([]byte(f.GetContent())),
+		modtime:  fsys.gist.GetUpdatedAt(),
+	}, nil
 }
 
 func (f *FS) ReadFile(name string) ([]byte, error) {
@@ -138,6 +138,7 @@ func (f *file) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	f.gistFile = nil
 	f.reader = nil
 
 	return nil
@@ -155,29 +156,16 @@ func (f *file) Stat() (fs.FileInfo, error) {
 		return nil, fs.ErrClosed
 	}
 
-	info := fileInfo{
-		name:    f.name,
-		size:    f.size,
-		mode:    fs.FileMode(0444),
-		modTime: f.modTime,
-		sys:     f,
-	}
-
-	return &info, nil
+	return f, nil
 }
 
-// fileInfo represents the file infos of a file stored in a gift.
-type fileInfo struct {
-	name    string
-	size    int64
-	mode    fs.FileMode
-	modTime time.Time
-	sys     *file
+func (f *file) ReadDir(n int) ([]fs.DirEntry, error) {
+	return nil, fs.ErrInvalid
 }
 
-func (i *fileInfo) Name() string       { return i.name }
-func (i *fileInfo) Size() int64        { return i.size }
-func (i *fileInfo) Mode() fs.FileMode  { return i.mode }
-func (i *fileInfo) ModTime() time.Time { return i.modTime }
-func (i *fileInfo) IsDir() bool        { return false }
-func (i *fileInfo) Sys() interface{}   { return i.sys }
+func (f *file) Name() string       { return f.gistFile.GetFilename() }
+func (f *file) Size() int64        { return int64(f.gistFile.GetSize()) }
+func (f *file) Mode() fs.FileMode  { return 0444 }
+func (f *file) ModTime() time.Time { return f.modtime }
+func (f *file) IsDir() bool        { return false }
+func (f *file) Sys() interface{}   { return f }

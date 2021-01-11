@@ -34,14 +34,14 @@ func TestErrorNotLoaded(t *testing.T) {
 func TestNew(t *testing.T) {
 	t.Run("New OK", func(t *testing.T) {
 		gfs := New(referenceGistID)
-		if got, want := gfs.ID, referenceGistID; got != want {
+		if got, want := gfs.GetID(), referenceGistID; got != want {
 			t.Fatalf("New returned a FS with ID=%#v, want %#v", got, want)
 		}
 	})
 
 	t.Run("NewWithClient OK", func(t *testing.T) {
 		gfs := NewWithClient(cacheClient, referenceGistID)
-		if got, want := gfs.ID, referenceGistID; got != want {
+		if got, want := gfs.GetID(), referenceGistID; got != want {
 			t.Fatalf("NewWithClient returned a FS with ID=%#v, want %#v", got, want)
 		}
 	})
