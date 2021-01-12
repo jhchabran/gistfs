@@ -330,6 +330,43 @@ func TestReadDir(t *testing.T) {
 		}
 	})
 
+	t.Run("NOK ReadDir on a file", func(t *testing.T) {
+		file, err := gfs.Open("test1.txt")
+		if err != nil {
+			t.Fatalf("Opening root directory, expected no error but got %#v", err)
+		}
+
+		dir, ok := file.(fs.ReadDirFile)
+		if !ok {
+			t.Fatal("Reading root directory, expected a ReadDirFile but got something else")
+		}
+
+		_, err = dir.ReadDir(-1)
+
+		if _, ok := err.(*fs.PathError); !ok {
+			t.Fatalf("Reading directory on a file, got %#v error, want %#v", err, &fs.PathError{})
+		}
+	})
+
+	t.Run("NOK Read on a directory", func(t *testing.T) {
+		file, err := gfs.Open(".")
+		if err != nil {
+			t.Fatalf("Opening root directory, expected no error but got %#v", err)
+		}
+
+		dir, ok := file.(fs.ReadDirFile)
+		if !ok {
+			t.Fatal("Reading root directory, expected a ReadDirFile but got something else")
+		}
+
+		b := make([]byte, 1)
+		_, err = dir.Read(b)
+
+		if _, ok := err.(*fs.PathError); !ok {
+			t.Fatalf("Reading bytes on a directory, got %#v error, want %#v", err, &fs.PathError{})
+		}
+	})
+
 	t.Run("OK Stat", func(t *testing.T) {
 		file, err := gfs.Open(".")
 		if err != nil {
