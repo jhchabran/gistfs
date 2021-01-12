@@ -277,6 +277,19 @@ func TestReadDir(t *testing.T) {
 		}
 	})
 
+	t.Run("NOK non existing dir", func(t *testing.T) {
+		tests := []string{"/", "non-existing/", "..", "../"}
+
+		for _, test := range tests {
+			_, err := gfs.Open(test)
+
+			var pathError *fs.PathError
+			if !errors.As(err, &pathError) {
+				t.Fatalf("Reading a non existing directory %#v, got %#v error, want %T", test, err, &fs.PathError{})
+			}
+		}
+	})
+
 	t.Run("OK subsequent reads", func(t *testing.T) {
 		file, err := gfs.Open(".")
 		if err != nil {
@@ -343,8 +356,9 @@ func TestReadDir(t *testing.T) {
 
 		_, err = dir.ReadDir(-1)
 
-		if _, ok := err.(*fs.PathError); !ok {
-			t.Fatalf("Reading directory on a file, got %#v error, want %#v", err, &fs.PathError{})
+		var pathError *fs.PathError
+		if !errors.As(err, &pathError) {
+			t.Fatalf("Reading directory on a file, got %#v error, want a %T", err, &fs.PathError{})
 		}
 	})
 
@@ -362,8 +376,9 @@ func TestReadDir(t *testing.T) {
 		b := make([]byte, 1)
 		_, err = dir.Read(b)
 
-		if _, ok := err.(*fs.PathError); !ok {
-			t.Fatalf("Reading bytes on a directory, got %#v error, want %#v", err, &fs.PathError{})
+		var pathError *fs.PathError
+		if !errors.As(err, &pathError) {
+			t.Fatalf("Reading bytes on a directory, got %#v error, want %T", err, &fs.PathError{})
 		}
 	})
 
