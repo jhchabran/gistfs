@@ -65,7 +65,7 @@ func TestOpen(t *testing.T) {
 		for _, test := range tests {
 			f, err := gfs.Open(test.name)
 
-			if err != test.err {
+			if test.err != nil && !errors.Is(err, test.err) {
 				t.Fatalf("Opened %#v, got error %#v, want %#v", test.name, err, test.err)
 			}
 
@@ -105,7 +105,7 @@ func TestReadFile(t *testing.T) {
 		for _, test := range tests {
 			b, err := gfs.ReadFile(test.name)
 
-			if err != test.err {
+			if test.err != nil && !errors.Is(err, test.err) {
 				t.Fatalf("Read file %#v, got error %#v, want %#v", test.name, err, test.err)
 			}
 
@@ -144,16 +144,6 @@ func TestRead(t *testing.T) {
 
 		if got, want := string(b), "foobar\n"; got != want {
 			t.Fatalf("Read %d bytes in b (%#v), want %#v", n, got, want)
-		}
-	})
-
-	t.Run("Read NOK nil file", func(t *testing.T) {
-		b := make([]byte, len("foobar\n"))
-		var f *file = nil
-		_, err := f.Read(b)
-
-		if got, want := err, fs.ErrInvalid; got != want {
-			t.Fatalf("Read on a nil file and got %#v, want %#v", got, want)
 		}
 	})
 
@@ -244,15 +234,6 @@ func TestStat(t *testing.T) {
 					t.Fatal("got Sys with type different from *github.GistFile, want it to be the case")
 				}
 			}
-		}
-	})
-
-	t.Run("Stat NOK nil file", func(t *testing.T) {
-		var f *file = nil
-		_, err := f.Stat()
-
-		if got, want := err, fs.ErrInvalid; got != want {
-			t.Fatalf("Read on a nil file and got %#v, want %#v", got, want)
 		}
 	})
 

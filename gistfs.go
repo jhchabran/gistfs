@@ -13,7 +13,7 @@ import (
 	"github.com/google/go-github/v33/github"
 )
 
-// Ensure FS implements fs.FS and fs.ReadFileFS interface.
+// Ensure io/fs interfaces are implemented
 var (
 	_ fs.ReadDirFS  = (*FS)(nil)
 	_ fs.ReadFileFS = (*FS)(nil)
@@ -55,7 +55,7 @@ func (fsys *FS) GetID() string {
 }
 
 // Load fetches the gist content from github, making the file system ready
-// for use. If the underlying Github API call fails, it will return an error.
+// for use. If the underlying Github API call fails, it will return its error.
 func (fsys *FS) Load(ctx context.Context) error {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
@@ -93,7 +93,7 @@ func (fsys *FS) Open(name string) (fs.File, error) {
 
 	f, ok := fsys.gist.Files[github.GistFilename(name)]
 	if !ok {
-		return nil, fs.ErrNotExist
+		return nil, &fs.PathError{Op: "read", Path: name, Err: fs.ErrNotExist}
 	}
 
 	return fsys.wrapFile(&f), nil
@@ -117,7 +117,7 @@ func (fsys *FS) ReadFile(name string) ([]byte, error) {
 
 	gistFile, ok := fsys.gist.Files[github.GistFilename(name)]
 	if !ok {
-		return nil, fs.ErrNotExist
+		return nil, &fs.PathError{Op: "read", Path: name, Err: fs.ErrNotExist}
 	}
 
 	return []byte(gistFile.GetContent()), nil
@@ -139,10 +139,6 @@ func (f *file) isClosed() bool {
 }
 
 func (f *file) Read(b []byte) (int, error) {
-	if f == nil {
-		return 0, fs.ErrInvalid
-	}
-
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -154,10 +150,6 @@ func (f *file) Read(b []byte) (int, error) {
 }
 
 func (f *file) Close() error {
-	if f == nil {
-		return fs.ErrInvalid
-	}
-
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -168,10 +160,6 @@ func (f *file) Close() error {
 }
 
 func (f *file) Stat() (fs.FileInfo, error) {
-	if f == nil {
-		return nil, fs.ErrInvalid
-	}
-
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
