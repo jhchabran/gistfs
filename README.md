@@ -25,6 +25,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/jhchabran/gistfs"
 )
@@ -65,6 +66,17 @@ func main() {
 	}
 
 	fmt.Println(string(b))
+
+	// --- ReadDir API
+	// there is only one directory in a gistfile, the root dir "."
+	files, err := gfs.ReadDir(".")
+	if err != nil {
+		panic(err)
+	}
+
+	for _, entry := range files {
+		fmt.Println(entry.Name())
+	}
 
 	// --- Serve the files from the gists over http
 	http.ListenAndServe(":8080", http.FileServer(http.FS(gfs)))
