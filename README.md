@@ -4,16 +4,7 @@ GistFS is an `io/fs` implementation that enables to read files stored in a given
 
 ## Requirements
 
-This module depends on `io/fs` which is only available in [go 1.16 beta1](https://tip.golang.org/doc/go1.16).
-To install it, run the following commands:
-
-```sh
-go get golang.org/dl/go1.16beta1
-go1.16beta1 download
-
-# From there, just use go1.16beta1 instead of the go command
-go1.16beta1 run ...
-```
+This module depends on `io/fs` which is only available since [go 1.16](https://tip.golang.org/doc/go1.16).
 
 ## Usage
 
@@ -85,6 +76,4 @@ func main() {
 
 ## See also
 
-- [Draft design for the file system interface.](https://go.googlesource.com/proposal/+/master/design/draft-iofs.md)
-- [Prototype code of io/fs](https://go-review.googlesource.com/c/go/+/243939)
-- [Managing Go installations](https://golang.org/doc/manage-install)
+- [io/fs godoc](https://pkg.go.dev/io/fs)
